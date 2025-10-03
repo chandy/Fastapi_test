@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: FastAPI on AWS Lambda using Lambda Web Adapter (container image)
+
+Globals:
+  Function:
+    Timeout: 10
+    MemorySize: 1024
+    Architectures:
+      - x86_64
+
+Resources:
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+
+  FastApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Events:
+        ApiRoot:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /
+            Method: ANY
+        ApiProxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: ANY
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: fastapi-lwa:latest
+
+Outputs:
+  HttpApiUrl:
+    Description: Invoke URL for the HttpApi
+    Value: !GetAtt HttpApi.ApiEndpoint
