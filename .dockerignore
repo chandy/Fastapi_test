@@ -1,0 +1,25 @@
+# VCS and editor files
+.git
+.gitignore
+*.swp
+*.swo
+*.log
+.DS_Store
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+
+# Local virtualenvs
+.venv
+
+# Tests and docs not needed in runtime image
+tests
+README.md
+
+# Node modules if present
+node_modules
