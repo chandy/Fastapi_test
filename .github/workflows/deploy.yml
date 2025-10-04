@@ -1,0 +1,83 @@
+name: Deploy to AWS (SAM)
+
+on:
+  workflow_dispatch:
+    inputs:
+      stack_name:
+        description: 'CloudFormation stack name'
+        required: true
+        default: 'fastapi-lwa-prod'
+      aws_region:
+        description: 'AWS Region'
+        required: true
+        default: 'us-east-1'
+      ecr_repo_name:
+        description: 'Amazon ECR repository name for Lambda image'
+        required: true
+        default: 'fastapi-lwa'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ github.event.inputs.aws_region }}
+  STACK_NAME: ${{ github.event.inputs.stack_name }}
+  ECR_REPO_NAME: ${{ github.event.inputs.ecr_repo_name }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Ensure ECR repository
+        id: ecr-repo
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ecr describe-repositories --repository-names "$ECR_REPO_NAME" >/dev/null 2>&1 || \
+            aws ecr create-repository --repository-name "$ECR_REPO_NAME" >/dev/null
+          echo "name=$ECR_REPO_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Compute ECR repo URI
+        id: ecr-uri
+        run: echo "uri=${{ steps.ecr-login.outputs.registry }}/${{ steps.ecr-repo.outputs.name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Install AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: Build SAM application (container)
+        run: sam build --use-container
+
+      - name: Deploy SAM application
+        env:
+          ECR_REPO_URI: ${{ steps.ecr-uri.outputs.uri }}
+        run: |
+          sam deploy \
+            --stack-name "$STACK_NAME" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --image-repository "$ECR_REPO_URI"
+
+      - name: Show API URL
+        run: |
+          aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Outputs' --output table || true
